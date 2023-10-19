@@ -84,7 +84,7 @@ class State:
 
         # ENERGISTIC only works when width=4
         if energistic:
-            assert self.width == 4, "energistic only work with width=4"
+            assert self.width == 4, "energistic only works with width=4"
             assert not probabilistic
 
         if probabilistic:
