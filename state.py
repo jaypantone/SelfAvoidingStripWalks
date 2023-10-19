@@ -21,11 +21,10 @@ x, C = sympy.symbols("x C")
 
 class State:
     """
-    Represents a state in the finite state machine for walks on a half-infinite strip of
-    fixed height <height>. <width> is the width of the states used in the machine, and
-    must be 2 for regular walks, probabilistic walks, and full walks, and 4 for
-    energistic walks. <final> means the right-hand edge of a state is a solid line,
-    i.e., that state cannot be extended any further.
+    New version of a state where we just always assume we are building on the
+    infinite half grid graph, so we don't need to separate final and non-final
+    states. But, we will use the "final" flag to mark a state as accepting for
+    convenience.
     """
 
     def __init__(
@@ -34,7 +33,7 @@ class State:
         width: int,
         segments: List[Segment],
         real_cols: int,
-        final: bool = False,
+        final: bool,
     ) -> None:
         self.height = height
         self.width = width
@@ -103,7 +102,8 @@ class State:
         if self.final:
             return []
         if len(self.segments) == 0:
-            return [(self, 1), (self.final_copy(), 1)]
+            assert False
+            return [(self, 1)]
 
         next_states: List[Tuple[State, Weight]] = []
 
@@ -136,7 +136,7 @@ class State:
             #  containing a single path that starts in column 2. It can go up or down,
             #  in any amount and either direction, or be a single point, as long as
             #  it does not conflict with any other segment. It cannot join an existing
-            #  segment, because that would already be acheived with a later step.
+            #  segment, because that would already be achieved with a later step.
             # We can't add a new segment with index 0, since segment 0 is always
             #  segment 0 by the problem definition.
             # We can't add new segments if segment 0 does have its endpoint in column 2
@@ -154,10 +154,23 @@ class State:
                 # any point in open_points could be the start of a new path
                 for start_point in open_points:
                     start_height = start_point[1]
+
+                    # (**) New observation: a new segment is allowed to be a single
+                    #  point ONLY if it is the last segment. Therefore, we start
+                    #  one point ABOVE start_height when trying to go up on any
+                    #  segment except the last. This seems to cut the number of
+                    #  states by about 10%.
+                    sh = (
+                        start_height
+                        if seg_ind == len(state.segments)
+                        else start_height + 1
+                    )
+
                     # first try to go up, and this is the loop in which we add the
                     #  single point path (and we need to make sure not to duplicate it
                     #  in the going down loop)
-                    for new_height in range(start_height, state.height):
+
+                    for new_height in range(sh, state.height):
                         if (self.width, new_height) not in open_points:
                             # once one height is bad, the rest will be as well
                             break
@@ -224,7 +237,7 @@ class State:
 
             # If the start and end are the same point, then the segment consists of a
             #   single path with a single point. If this is the first segment, then it
-            #   can only be the start of a path. If it's any of segment, it can only be
+            #   can only be the start of a path. If it's any other segment, it can only be
             #   an end (and I think there can really only be one of those in order to
             #   end up with something valid, but we don't need to worry about that
             #   here.)
@@ -367,7 +380,6 @@ class State:
             #  to once again move the end of segment i (which is the point that was
             #  previously the end of segment i+1).
             if seg_ind != len(state.segments) - 1 and which_seg == "e":
-
                 next_first_point = state.segments[seg_ind + 1].paths[0].points[0]
                 next_start = (
                     next_first_point if next_first_point[0] == self.width - 1 else None
@@ -434,38 +446,36 @@ class State:
                             )
                         )
 
-        if probabilistic:
-            non_final_versions = [(ns, ns.probability() * w) for (ns, w) in next_states]
-            final_versions = [
-                (ns.final_copy(), ns.final_copy().probability() * w)
-                for (ns, w) in next_states
-            ]
-        elif energistic:
-            non_final_versions = [
-                (ns, ns.energy_probability() * w) for (ns, w) in next_states
-            ]
-            final_versions = [
-                (ns.final_copy(), ns.final_copy().energy_probability() * w)
-                for (ns, w) in next_states
-            ]
+        # If we're in "full_only" mode, every state gets a final copy if it has
+        #  a single segment (if it's not full, it will get filtered by
+        #  "is_bad_state"
+        if full_only:
+            new_full_final = []
+            for ns, weight in next_states:
+                if len(ns.segments) == 1:
+                    state_copy = deepcopy(ns)
+                    state_copy.final = True
+                    new_full_final.append((state_copy, weight))
+            next_states = next_states + new_full_final
         else:
-            non_final_versions = next_states
-            final_versions = [(ns.final_copy(), w) for (ns, w) in next_states]
+            # check whether each state should be accepting or not
+            for ns, _ in next_states:
+                assert len(ns.segments) > 0
+                if (
+                    len(ns.segments) == 1
+                    and ns.segments[0].paths[-1].points[-1][0] < self.width
+                ):
+                    ns.final = True
 
+        if probabilistic:
+            next_states = [(ns, ns.probability() * w) for (ns, w) in next_states]
+        elif energistic:
+            next_states = [(ns, ns.energy_probability() * w) for (ns, w) in next_states]
         return [
             ns.trim(w)
-            for (ns, w) in non_final_versions + final_versions
+            for (ns, w) in next_states
             if not ns.is_bad_state(full_only=full_only)
         ]
-
-    def final_copy(self) -> "State":
-        """
-        Makes a deep copy of this state, except final is set to True.
-        """
-        assert not self.final
-        new_state = deepcopy(self)
-        new_state.final = True
-        return new_state
 
     def probability(self) -> Fraction:
         """
@@ -490,6 +500,8 @@ class State:
         else:
             open_cols = set(range(self.width + 1))
         open_points = {(x, y) for x in open_cols for y in range(self.height)}
+        if self.final:
+            open_points.update({(self.width + 1, y) for y in range(self.height)})
 
         for segment in self.segments:
             for path in segment.paths:
@@ -531,6 +543,8 @@ class State:
             for x in range(self.width - self.real_cols, self.width + 1)
             for y in range(self.height)
         }
+        if self.final:
+            open_points.update({(self.width + 1, y) for y in range(self.height)})
         # occupied_points = set.union(*[segment.points() for segment in self.segments])
         occupied_points = set()
 
@@ -544,7 +558,7 @@ class State:
 
         for segment in self.segments:  # pylint: disable=R1702
             for path in segment.paths:
-                for (index, start_point) in enumerate(path.points[:-1]):
+                for index, start_point in enumerate(path.points[:-1]):
                     if self.real_cols == 0 and start_point[0] == self.width - 1:
                         # This is the fake point that helps us initialize start states.
                         continue
@@ -603,7 +617,15 @@ class State:
                 return True
 
         if self.final and len(self.segments) > 1:
+            assert False, "We should never get here."
             return True
+
+        ## TESTING: A state is bad if it has a non-last segment that is a
+        ##   single path, with a single point, in the rightmost col
+        for segment in self.segments[:-1]:
+            segpts = segment.points()
+            if len(segpts) == 1 and next(iter(segpts))[0] == 2:
+                return True
 
         # a state is bad if there is any segment except the last one that has an
         #   endpoint in any column except the rightmost column
@@ -707,13 +729,15 @@ class State:
     @staticmethod
     def init_state(height: int, width: int) -> "State":
         """returns the initial state that will kick off the finite state machine"""
-        return State(height, width, [Segment([Path([(width - 1, height - 1)])])], 0)
+        return State(
+            height, width, [Segment([Path([(width - 1, height - 1)])])], 0, False
+        )
 
     def __str__(self) -> str:
         end_chr = "|" if self.final else ":"
         if len(self.segments) == 0:
             return "---\n" + (f": {end_chr}\n" * (3 * (self.height - 1) + 1)) + "---"
-        colors = [2, 1, 3, 4, 5, 6, 8, 47, 50, 52, 55, 58, 68, 95, 122, 195, 229, 237]
+        colors = [2, 1, 4, 3, 5, 6, 8, 47, 50, 52, 55, 58, 68, 95, 122, 195, 229, 237]
         assert len(self.segments) <= len(
             colors
         ), f"We only have enough colors for {len(colors)} paths!"
@@ -726,7 +750,7 @@ class State:
 
         # (x,y) -> i means the point (x,y) is in segment i
         point_assignments: Dict[Point, int] = dict()
-        for (index, segment) in enumerate(self.segments):
+        for index, segment in enumerate(self.segments):
             for path in segment.paths:
                 for point in path.points:
                     point_assignments[point] = index
@@ -739,9 +763,9 @@ class State:
         # (x,y) -> (i,"v") means the path from (x,y+1) to (x,y) is in segment i
         vertical_path_assignments: Dict[Point, Tuple[int, str]] = dict()
 
-        for (index, segment) in enumerate(self.segments):
+        for index, segment in enumerate(self.segments):
             for path in segment.paths:
-                for (pt1, pt2) in zip(path.points[:-1], path.points[1:]):
+                for pt1, pt2 in zip(path.points[:-1], path.points[1:]):
                     if pt1[1] == pt2[1]:
                         if pt1[0] == pt2[0] - 1:
                             horizontal_path_assignments[pt1] = (index, ">")
@@ -761,8 +785,8 @@ class State:
 
         # Now we have all info set up!
         # How wide and tall does the figure have to be?
-        # max_x = max(pt[0] for pt in point_assignments.keys())
-        max_x = self.width - 1
+        max_x = max(1, max(pt[0] for pt in point_assignments.keys()))
+        # max_x = self.width - 1
         # print(list(point_assignments.keys()))
 
         S = "-" * (5 + 5 * max_x) + "\n"

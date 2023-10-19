@@ -338,10 +338,129 @@ def count_maximal_anchored_walks_by_length(
         #   work to <todo> that has already been done.
         next_walks = walk.get_next_walks()
         if next_walks:
-            if not max_len or walk_len < max_len:
+            if max_len is None or walk_len < max_len:
                 todo.extend(next_walks)
         else:
             enum[walk_len] += 1
+
+    return enum
+
+
+def count_maximal_anchored_walks_by_length_and_displacement(
+    height: int, width: int, max_len: Optional[int] = None
+) -> List[List[int]]:
+    """
+    Returns the number of maximal anchored walks in a <height> x <width> rectangle,
+    refined by length and displacement (max x value).
+    output[i][j] = # of walks with length i and displacement j
+    """
+    max_poss_len = max_len if max_len is not None else height * width
+    max_poss_diss = max_len if max_len is not None else width - 1
+    enum = [[0] * (max_poss_diss + 1) for _ in range(max_poss_len + 1)]
+    # print(len(enum), enum)
+    todo: Deque[Walk] = deque([Walk(height, width, [(0, height - 1)])])
+    while todo:
+        walk = todo.popleft()
+        walk_len = len(walk)
+        # Walks can only ever be made in one way, so we don't have to worry about adding
+        #   work to <todo> that has already been done.
+        next_walks = walk.get_next_walks()
+        if next_walks:
+            if max_len is None or walk_len < max_len:
+                todo.extend(next_walks)
+        else:
+            displacement = max(pt[0] for pt in walk.walk)
+            enum[walk_len][displacement] += 1
+
+    return enum
+
+
+def count_maximal_anchored_walks_by_length_and_displacement_probabilistic(
+    height: int, width: int, max_len: Optional[int] = None
+) -> List[List[Fraction]]:
+    """
+    Returns the number of maximal anchored walks in a <height> x <width> rectangle,
+    refined by length and displacement (max x value).
+    output[i][j] = # of walks with length i and displacement j
+    """
+    max_poss_len = max_len if max_len else height * width
+    max_poss_diss = max_len if max_len else width - 1
+    enum = [
+        [Fraction(0, 1) for _ in range(max_poss_diss + 1)]
+        for _ in range(max_poss_len + 1)
+    ]
+    # print(len(enum), enum)
+    todo: Deque[Tuple[Walk, Fraction]] = deque(
+        [(Walk(height, width, [(0, height - 1)]), Fraction(1, 1))]
+    )
+    while todo:
+        walk, weight = todo.popleft()
+        walk_len = len(walk)
+        # Walks can only ever be made in one way, so we don't have to worry about adding
+        #   work to <todo> that has already been done.
+        next_walks = walk.get_next_probabilistic_walks(weight)
+        if next_walks:
+            if max_len is None or walk_len < max_len:
+                todo.extend(next_walks)
+        else:
+            displacement = max(pt[0] for pt in walk.walk)
+            enum[walk_len][displacement] += weight
+
+    return enum
+
+
+def count_maximal_anchored_walks_by_length_and_displacement_energistic(
+    height: int, width: int, max_len: Optional[int] = None
+) -> List[List[Fraction]]:
+    """
+    Returns the number of maximal anchored walks in a <height> x <width> rectangle,
+    refined by length and displacement (max x value).
+    output[i][j] = # of walks with length i and displacement j
+    """
+    max_poss_len = max_len if max_len else height * width
+    max_poss_diss = max_len if max_len else width - 1
+    enum = [
+        [Fraction(0, 1) for _ in range(max_poss_diss + 1)]
+        for _ in range(max_poss_len + 1)
+    ]
+    # print(len(enum), enum)
+    todo: Deque[Tuple[Walk, Fraction]] = deque(
+        [(Walk(height, width, [(0, height - 1)]), Fraction(1, 1))]
+    )
+    while todo:
+        walk, weight = todo.popleft()
+        walk_len = len(walk)
+        # Walks can only ever be made in one way, so we don't have to worry about adding
+        #   work to <todo> that has already been done.
+        next_walks = walk.get_next_energistic_walks(weight)
+        if next_walks:
+            if max_len is None or walk_len < max_len:
+                todo.extend(next_walks)
+        else:
+            displacement = max(pt[0] for pt in walk.walk)
+            enum[walk_len][displacement] += weight
+
+    return enum
+
+
+def count_maximal_anchored_full_walks(height: int, width: int) -> int:
+    """
+    Returns the number of maximal anchored walks in a <height> x <width> rectangle,
+    refined by length.
+    """
+    enum = 0
+    # print(len(enum), enum)
+    todo: Deque[Walk] = deque([Walk(height, width, [(0, height - 1)])])
+    while todo:
+        walk = todo.popleft()
+        walk_len = len(walk)
+        # Walks can only ever be made in one way, so we don't have to worry about adding
+        #   work to <todo> that has already been done.
+        next_walks = walk.get_next_walks()
+        if next_walks:
+            todo.extend(next_walks)
+        elif walk_len == height * width - 1:
+            enum += 1
 
     return enum
 
