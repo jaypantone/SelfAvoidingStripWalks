@@ -26,7 +26,6 @@ class SymTracker:
         """
         Returns state or state.flip(), whichever is <. Caches the result.
         """
-        # return state
         if state.final:
             # fake acceptance state to stand in for all acceptance states
             return self.fake_acceptance
@@ -84,22 +83,10 @@ def build_machine(
     CFSM.set_start(init_state)
     CFSM.set_accepting([state for state in done if state.final])
 
-    # accepting = [start]
-    # for state in state_list:
-    #     if state.final:
-    #         if any(
-    #             pt[0] == state.width - 1
-    #             for segment in state.segments
-    #             for path in segment.paths
-    #             for pt in path.points
-    #         ):
-    #             accepting.append(state_to_index[state])
-
     for old_state, next_states in state_to_next_states.items():
         displacement_weight = 1 if old_state == init_state else y
         for new_state, weight in next_states:
             CFSM.add_transition(
-                # old_state, new_state, sympy.sympify(weight).subs(x, y) * x
                 old_state,
                 new_state,
                 sympy.sympify(weight * displacement_weight),
@@ -111,17 +98,8 @@ def build_machine(
         f"Machine has {num_states} states and "
         f"{len(CFSM.transition_weights)} transitions."
     )
-    # return CFSM
-    # minimized = CFSM.minimize()
-    # while len(minimized.states) != num_states:
-    #     num_states = len(minimized.states)
-    #     print(
-    #         f"Machine has {num_states} states and "
-    #         f"{len(minimized.transition_weights)} transitions."
-    #     )
-    #     minimized = minimized.minimize()
 
-    print("Minimizing with new Moore method.")
+    print("Minimizing with Moore method.")
     minimized = CFSM.moore_minimize(verbose=True)
     print(
         f"Machine has {len(minimized.states)} states and "

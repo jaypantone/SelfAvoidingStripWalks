@@ -7,8 +7,6 @@ import sympy
 # M42 = build_machine(4, 2, False, False, False)
 
 """
-    UNBOUNDED VERSION
-    
     This file contains data on the number of walks of various types (as multivariate
     polynomials), computed by brute force using the Walk class in walk.py. The
     build_machine module has functions for testing our finite state machines that

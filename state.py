@@ -13,7 +13,6 @@ from path import Path
 from segment import Segment
 
 Point = Tuple[int, int]
-# Tag = str
 Weight = Union[sympy.polys.polytools.Poly, sympy.Expr]
 
 x, C = sympy.symbols("x C")
