@@ -98,6 +98,7 @@ def build_machine(
         f"Machine has {num_states} states and "
         f"{len(CFSM.transition_weights)} transitions."
     )
+    # return CFSM
 
     print("Minimizing with Moore method.")
     minimized = CFSM.moore_minimize(verbose=True)
@@ -107,7 +108,7 @@ def build_machine(
     )
 
     with open(
-        f"results/walks_{height}_{width}{'_prob' if probabilistic else ''}"
+        f"generated_matrices/walks_{height}_{width}{'_prob' if probabilistic else ''}"
         f"{'_energ' if energistic else ''}{'_full_only' if full_only else ''}.txt",
         "w",
     ) as f:

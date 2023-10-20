@@ -1,0 +1,263 @@
+# table-smarter-elim.maple
+
+# same plan as "smarter-elim.maple" but using a data structure for the equations since
+# they are always linear in the variables (well, affine, since they have a "constant term")
+
+# each eq will be a table mapping indets to their coeffs, with "1" mapping to the constant term
+
+# e.g. to store x^2 + x + (y+1)*A + x*y*B we will have the data structure
+# {1 => x^2 + x, A => y+1, B => x*y}
+
+#kernelopts(assertlevel=1):
+#_EnvProbabilistic := 0:
+SIZE := LinearAlgebra[Dimension](M)[1]:
+#kernelopts(printbytes=false):
+
+
+V := Vector(LinearAlgebra[Dimensions](M)[1]):
+for a in accepting do V[a] := 1: od:
+B := V:
+V := subs({seq(v(i)=v[i],i=1..SIZE)}, Vector(SIZE, v)):
+eqs := numer(convert(M.V-B,list)):
+
+# convert an equation into a table whose keys are the v[i] variables and the
+# values are the corresponding coefficients
+convert_eq := proc(eq, known_indets := {})
+
+	local rel_indets, iii, table_eq, const_term:
+
+	if nops(known_indets) = 0 then
+		rel_indets := indets(eq) minus {x, y, C}:
+	else
+		rel_indets := known_indets minus {x, y, C}:
+		#ASSERT(rel_indets = (indets(eq) minus {x, y, C}), [rel_indets, (indets(eq) minus {x, y, C}, eq)]):
+	fi:
+
+
+
+	#print(eq):
+	#print(indets(eq)):
+	#print(rel_indets):
+
+	table_eq := table(sparse):
+	for iii in rel_indets do
+		term_to_set := coeff(eq, iii, 1):
+		if term_to_set <> 0 then
+			table_eq[iii] := term_to_set:
+		fi:
+	od:
+	
+	const_term := subs({seq(iii=0, iii=rel_indets)}, eq):
+	if const_term <> 0 then
+		table_eq[1] := const_term:
+	fi:
+
+	#ASSERT(sort([entries(table_eq, 'pairs')]) = sort([entries(old_convert_eq(eq), 'pairs')]), [eq, op(table_eq), op(old_convert_eq(eq))]):
+
+	return table_eq:
+end:
+
+#old_convert_eq := proc(eq)
+#
+#	local rel_indets, iii, table_eq, const_term:
+#
+#	rel_indets := indets(eq) minus {x, y, C}:
+#
+#	#print(eq):
+#	#print(indets(eq)):
+#	#print(rel_indets):
+#
+#	table_eq := table(sparse):
+#	for iii in rel_indets do
+#		term_to_set := factor(coeff(eq, iii, 1)):
+#		if term_to_set <> 0 then
+#			table_eq[iii] := term_to_set:
+#		fi:
+#	od:
+#	
+#	const_term := factor(subs({seq(iii=0, iii=rel_indets)}, eq)):
+#	if const_term <> 0 then
+#		table_eq[1] := const_term:
+#	fi:
+#
+#	return table_eq:
+#end:
+
+# now I need to convert these equations into table objects
+eqs := sort_eqs(map(convert_eq, eqs)):
+
+table_size := proc(T)
+	return nops([indices(T, 'nolist')]):
+end:
+
+# sorts eqs by the number of terms that have (size of the table)
+sort_eqs := proc(eqs)
+	return sort(eqs,key=(T->table_size(T))):
+end:
+
+# gives indets involved in the equation
+indets_of_eq := proc(eq)
+	return {indices(eq, 'nolist')}:
+end:
+
+# gives indets of a list of eqs
+all_indets := proc(eqs)
+	return `union`(op(map(indets_of_eq, eqs))) minus {1}:
+end:
+
+# convert a table equation back to a regular one
+table_to_eq := proc(table_eq)
+	local term;
+
+	return add(lhs(term)*rhs(term), term=[entries(table_eq, 'pairs')])
+end:
+
+# to find the "best" variable to eliminate,
+# first find the smallest equation (i.e., fewest indets)
+# then pick the variable in that equation involved in the
+# fewest equations
+# ASSUMES "eqs" IS ALREADY SORTED WITH "sort_eqs"
+best_variable := proc(eqs, ignore)
+	local smallest_eq, eq, rel_indets, best_var, iii, num_occurrences:
+
+	# since eqs is sorted already, the eq with the smallest number
+	# of terms is the first one
+	smallest_eq := eqs[1]:
+
+	# find indet involved in fewest equations
+	rel_indets := indets_of_eq(smallest_eq) minus {1} minus ignore:
+	
+	# determine how many times each rel_indet is used
+	num_occurrences := table(sparse):
+	for eq in eqs do
+		for iii in indets_of_eq(eq) intersect rel_indets do
+			num_occurrences[iii]++:
+		od:
+	od:
+
+	# now find smallest entry
+	best_var := rel_indets[1]:
+	for iii in rel_indets[2..] do
+		if num_occurrences[iii] < num_occurrences[best_var] then
+			best_var := iii:
+		fi:
+	od:
+
+	return best_var:
+
+end:
+
+# eliminates var from the two equations
+# assumes the equations are linear in var
+# which they are in this finite state machine case
+do_elim := proc(eq1, eq2, var)
+	local new_eq, fact, rel_facts, iii, rel_indets, common_pos_fact, common_neg_fact, new_common_pos_fact, new_common_neg_fact, is_first, new_cf, new_fact, to_mult, fact_mult_pair:
+
+	# eqs := [a p + b, a q + c]
+	#    -b q + c p
+	#
+	# more explicitly if we have
+	#  a * P + b * Q + c * R + S
+	# and
+	#  a * F + b * G + c * H + I
+	# then the elimination is
+	#  (b * Q + c * R + S) * F - (b * G + c * H + I) * P
+	#   = b * (Q*F - G*P) + c * (R*F - H*P) + (S*F - I*P)
+	# so the coeff of indet "b" in the elimination of "a"
+	#   coeff(eq1, b) * coeff(eq2, a) - coeff(eq2, b) * coeff(eq1, a)
+	
+	#print("Elim",eq1,eq2,var):
+
+	rel_indets := (indets_of_eq(eq1) union indets_of_eq(eq2)) minus {var}:
+	
+
+	conv_eq1 := table_to_eq(eq1):
+	conv_eq2 := table_to_eq(eq2):
+
+	new_real_eq := coeff(conv_eq2, var, 0) * coeff(conv_eq1, var, 1) - coeff(conv_eq1, var, 0) * coeff(conv_eq2, var, 1):
+	ff := factors(new_real_eq)[2]:
+	rel_facts := select(fact -> not (indets(fact) subset {x, y, C}), ff):
+	new_real_eq := numer(mul(fact[1], fact=rel_facts)):
+	
+	return convert_eq(new_real_eq, rel_indets minus {1}):
+
+	#new_eq := collect(new_eq, [seq(v[i],ii=1..SIZE)], distributed, factor):
+	#return new_eq:
+
+end:
+
+
+#go := proc(inp_eqs)
+#	local eqs, round_num, parameters, solve_for, keep_vars, var_to_elim, S, R, num_terms, smallest_eq, smallest_num_terms, nt, res_num, new_eqs, res, s_eq, ind, remaining_indets:
+
+	# this will do the elimination leaving v[1], together with whatever
+	# variables ("parameters") you care about like {x} or {x,y} or {x,y,C}
+#	eqs := inp_eqs:
+	round_num := 0:
+	parameters := {x, y, C}:
+	solve_for := v[1]:
+
+	keep_vars := parameters union {solve_for}:
+	remaining_indets := all_indets(eqs) minus parameters:
+
+	while not (remaining_indets subset keep_vars) do
+		round_num := round_num + 1:
+		var_to_elim := best_variable(eqs, keep_vars):
+		printf("Round %a / %a: eliminating %a\n", round_num, SIZE-1, var_to_elim):
+		
+		S, R := selectremove(e -> e[var_to_elim] <> 0, eqs):
+		
+		printf("\tinvolved in %a equations\n", nops(S)):
+
+		# get number of terms in each eq and store it
+		num_terms := [table_size(S[1])]:
+		smallest_eq := S[1]:
+		smallest_num_terms := num_terms[1]:
+
+		for s_eq in S[2..] do
+			nt := table_size(s_eq):
+			num_terms := [op(num_terms), nt]:
+			if nt < smallest_num_terms then
+				smallest_num_terms := nt:
+				smallest_eq := s_eq:
+			fi:
+		od:
+
+		printf("\tsmallest eq has size %a\n\t", smallest_num_terms):
+
+		res_num := 0:
+
+		#new_eqs := Threads[Seq](`if`(s_eq=smallest_eq, NULL, do_elim(smallest_eq, s_eq, var_to_elim)), s_eq=S):
+		#eqs := [op(R), new_eqs]:
+
+		new_eqs := []:
+		for ind, s_eq in S do
+			res_num += 1:
+			
+			if s_eq = smallest_eq then
+				# no need to eliminate against itself
+				#printf("[skip]\n"):
+			else
+				# elimimate
+				res := do_elim(smallest_eq, s_eq, var_to_elim):
+				new_eqs := [op(new_eqs), res]:
+				#printf("done\n");
+			fi:
+			printf("%d/",ind):
+		od:
+		
+		eqs := sort_eqs([op(R), op(new_eqs)]):
+
+		remaining_indets := all_indets(eqs) minus parameters:
+		printf("\n\tdone! %a eqs left with %a indets.\n", nops(eqs), nops(remaining_indets));
+	od:
+
+#	return eqs:
+#end:
+
+f := solve(table_to_eq(eqs[1]), v[1]):
+
+
+
+
+

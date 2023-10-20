@@ -1,3 +1,4 @@
 SAWs.code-workspace
 walk.py
 .DS_Store
+__pycache__/*
