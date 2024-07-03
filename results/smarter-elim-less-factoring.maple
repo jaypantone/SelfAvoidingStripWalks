@@ -1,3 +1,5 @@
+# THIS IS THE BEST VERSION OF THE SCRIPT, IGNORE THE OTHERS
+
 # table-smarter-elim.maple
 
 # same plan as "smarter-elim.maple" but using a data structure for the equations since
@@ -8,11 +10,15 @@
 # e.g. to store x^2 + x + (y+1)*A + x*y*B we will have the data structure
 # {1 => x^2 + x, A => y+1, B => x*y}
 
+cpu_time := time():
+wall_time := time[real]():
+
 #kernelopts(assertlevel=1):
 #_EnvProbabilistic := 0:
 SIZE := LinearAlgebra[Dimension](M)[1]:
 #kernelopts(printbytes=false):
 
+SOLVE_FOR := v[start]:
 
 V := Vector(LinearAlgebra[Dimensions](M)[1]):
 for a in accepting do V[a] := 1: od:
@@ -190,12 +196,12 @@ end:
 #go := proc(inp_eqs)
 #	local eqs, round_num, parameters, solve_for, keep_vars, var_to_elim, S, R, num_terms, smallest_eq, smallest_num_terms, nt, res_num, new_eqs, res, s_eq, ind, remaining_indets:
 
-	# this will do the elimination leaving v[1], together with whatever
+	# this will do the elimination leaving v[SOLVE_FOR], together with whatever
 	# variables ("parameters") you care about like {x} or {x,y} or {x,y,C}
 #	eqs := inp_eqs:
 	round_num := 0:
 	parameters := {x, y, C}:
-	solve_for := v[1]:
+	solve_for := SOLVE_FOR:
 
 	keep_vars := parameters union {solve_for}:
 	remaining_indets := all_indets(eqs) minus parameters:
@@ -255,8 +261,9 @@ end:
 #	return eqs:
 #end:
 
-f := solve(table_to_eq(eqs[1]), v[1]):
-
+f := solve(table_to_eq(eqs[1]), SOLVE_FOR):
+printf("cpu time: %a\n", time()-cpu_time):
+printf("wall time: %a\n", time[real]()-wall_time):
 
 
 
